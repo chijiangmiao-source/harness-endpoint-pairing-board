@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-ssr/
+
+# 测试产物
+playwright-report/
+test-results/
+coverage/
+
+# 本地环境与编辑器
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,31 @@
+services:
+  # 页面服务：宿主端口可用环境变量 WEB_PORT 覆盖，默认 8080
+  page:
+    build: .
+    image: harness-wiring-board
+    ports:
+      - "${WEB_PORT:-8080}:4173"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # 一次性验收服务：跑 Playwright（含鼠标拖拽与键盘选择链路）后退出
+  verify:
+    image: harness-wiring-board
+    build: .
+    environment:
+      # 指向 compose 网络中的 page 服务；设置后 Playwright 不再自起服务器
+      BASE_URL: http://page:4173
+    depends_on:
+      page:
+        condition: service_healthy
+    # 一次性运行，退出码即验收结果
+    command: ["npx", "playwright", "test"]
+    restart: "no"

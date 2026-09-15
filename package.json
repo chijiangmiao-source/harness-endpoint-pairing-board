@@ -1,0 +1,28 @@
+{
+  "name": "harness-wiring-board",
+  "version": "1.0.0",
+  "private": true,
+  "description": "线束两端针位连线核验板（纯前端）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.10.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^2.2.12"
+  }
+}
