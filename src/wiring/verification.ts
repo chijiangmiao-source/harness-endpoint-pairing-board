@@ -5,6 +5,15 @@
 
 export type Side = 'A' | 'B'
 
+/**
+ * 观察面：装配员可从端子插合面或导线引出面观察外壳，
+ * 两个方向看到的针位视觉顺序恰好相反。
+ * - standard：默认观察面，针位按录入顺序排列；
+ * - reversed：从另一面观察，针位的显示顺序整体倒序。
+ * 观察面只影响展示，针位号身份、预期映射与连线裁决均不随之改变。
+ */
+export type ViewFace = 'standard' | 'reversed'
+
 /** 录入阶段的拒绝原因 */
 export type MappingCode =
   | 'DUPLICATE_PIN'
@@ -304,4 +313,43 @@ export function evaluateBundle(
   }
 
   return { status, connectedA, connectedB, allConnected, allCorrect, adjudications, message }
+}
+
+/* ---------------- 观察面投影（录入顺序 -> 显示顺序） ---------------- */
+
+/**
+ * 把某一端的针位按观察面投影为显示顺序：
+ * standard 保持录入顺序；reversed 整体倒序。
+ * 返回新数组，不修改入参。
+ */
+export function projectPins(pins: string[], face: ViewFace): string[] {
+  return face === 'reversed' ? [...pins].reverse() : [...pins]
+}
+
+/**
+ * 针位号在该观察面下的显示行号（从 0 开始）。
+ * 领域层始终以针位号维持映射与连线身份，画板坐标与标签只读取投影结果。
+ */
+export function displayIndexOf(
+  pins: string[],
+  pin: string,
+  face: ViewFace,
+): number {
+  const entryIndex = pins.indexOf(pin)
+  if (entryIndex < 0) return 0
+  return face === 'reversed' ? pins.length - 1 - entryIndex : entryIndex
+}
+
+/** 双端观察面状态（可分别切换，互不影响） */
+export interface ViewFaces {
+  A: ViewFace
+  B: ViewFace
+}
+
+/** 默认观察面：保持录入排列与既有操作结果 */
+export const STANDARD_FACES: ViewFaces = { A: 'standard', B: 'standard' }
+
+/** 仅切换指定一端的观察面，另一端保持不变 */
+export function toggleFace(faces: ViewFaces, side: Side): ViewFaces {
+  return { ...faces, [side]: faces[side] === 'reversed' ? 'standard' : 'reversed' }
 }

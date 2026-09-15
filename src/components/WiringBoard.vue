@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  displayIndexOf,
   evaluateBundle,
+  projectPins,
   removeConnection,
+  STANDARD_FACES,
+  toggleFace,
   tryConnect,
   type BundleState,
   type Connection,
   type EndpointRef,
   type Side,
+  type ViewFaces,
 } from '../wiring/verification'
 import type { MappingSnapshot } from '../wiring/verification'
 
@@ -24,6 +29,12 @@ const nextWireId = () => `wire-${Date.now().toString(36)}-${++wireSeq}`
 
 const connections = ref<Connection[]>([])
 const selected = ref<EndpointRef | null>(null)
+
+/**
+ * A、B 两端各自的当前观察面，可分别切换。
+ * 观察面只做「录入顺序 -> 显示顺序」的投影：连线身份、预期映射与裁决不受影响。
+ */
+const faces = ref<ViewFaces>({ ...STANDARD_FACES })
 
 interface DragState {
   side: Side
@@ -42,19 +53,25 @@ interface Rejection {
 const rejection = ref<Rejection | null>(null)
 const liveMessage = ref('连线阶段已就绪：拖拽针位，或用 Tab 聚焦后按 Enter 选择两端建立连线。')
 
+/** 切换观察面导致临时操作（拖拽 / 键盘首端选中）被取消时，在画板旁提示重新选择 */
+const faceNotice = ref('')
+
 let rejectionTimer: ReturnType<typeof setTimeout> | undefined
 
 const svgEl = ref<SVGSVGElement | null>(null)
+/** 针位号身份清单（录入顺序）：裁决、占用、整束状态始终读取它 */
 const aPins = computed(() => props.mapping.aPins)
 const bPins = computed(() => props.mapping.bPins)
 const expectedByA = computed(() => props.mapping.expectedByA)
 
-const aIndex = computed(() => new Map(aPins.value.map((pin, i) => [pin, i])))
-const bIndex = computed(() => new Map(bPins.value.map((pin, i) => [pin, i])))
+/** 投影后的显示顺序：仅画板坐标、端点标签与连线路径使用 */
+const displayedA = computed(() => projectPins(aPins.value, faces.value.A))
+const displayedB = computed(() => projectPins(bPins.value, faces.value.B))
 
 function yOf(side: Side, pin: string): number {
-  const index = (side === 'A' ? aIndex.value : bIndex.value).get(pin) ?? 0
-  return TOP + index * ROW_H
+  const pins = side === 'A' ? aPins.value : bPins.value
+  const displayIndex = displayIndexOf(pins, pin, faces.value[side])
+  return TOP + displayIndex * ROW_H
 }
 
 const xOf = (side: Side) => (side === 'A' ? X_A : X_B)
@@ -93,6 +110,29 @@ function showRejection(side: Side, pin: string, message: string) {
   rejectionTimer = setTimeout(() => {
     rejection.value = null
   }, 8000)
+}
+
+/**
+ * 切换某一端的观察面：只翻转该端「录入顺序 -> 显示顺序」的投影，
+ * 已建立连线及其裁决全部保留。若正处于拖拽或键盘首端选中状态，
+ * 取消本次临时操作并在画板旁提示重新选择，避免旧坐标落到错误针位。
+ */
+function switchFace(side: Side) {
+  const wasDragging = drag.value !== null
+  const wasSelecting = selected.value !== null
+  faces.value = toggleFace(faces.value, side)
+  drag.value = null
+  selected.value = null
+  rejection.value = null
+
+  const faceName = faces.value[side] === 'reversed' ? '导线引出面（针位倒序显示）' : '端子插合面（针位正序显示）'
+  if (wasDragging || wasSelecting) {
+    const reason = wasDragging ? '当时正在拖拽' : '当时已选中首端'
+    faceNotice.value = `${side} 端观察面已切换为${faceName}：${reason}，本次未完成的操作已取消，请重新选择针位；已建立的连线与裁决全部保留。`
+  } else {
+    faceNotice.value = ''
+  }
+  announce(`${side} 端观察面已切换为${faceName}，连线身份与裁决均不改变。`)
 }
 
 function attemptConnect(aPin: string, bPin: string) {
@@ -349,8 +389,45 @@ onBeforeUnmount(() => {
         <kbd>Tab</kbd> 聚焦针位，按 <kbd>Enter</kbd>/<kbd>空格</kbd> 依次选择两端建立连线，
         <kbd>Esc</kbd> 取消选择，焦点在已连接针位上时按 <kbd>Delete</kbd> 删除其连线。
         每个端点最多参与一条线，重复占用会在该端点旁被拒绝，原线保留。
+        从端子插合面与导线引出面看到的针位顺序相反，可用上方按钮分别切换 A、B 端观察面，
+        画板只反转该端的显示顺序；切换会保留全部已建连线，若拖拽或选择进行到一半则取消本次操作。
       </p>
       <p class="live sr-only" aria-live="assertive" data-testid="live-region">{{ liveMessage }}</p>
+
+      <div class="face-switch" data-testid="face-switch">
+        <span class="strip-label">观察面：</span>
+        <button
+          type="button"
+          class="face-btn"
+          :class="{ reversed: faces.A === 'reversed' }"
+          data-testid="face-toggle-A"
+          :data-face="faces.A"
+          :aria-pressed="faces.A === 'reversed'"
+          @click="switchFace('A')"
+        >
+          A 端 · {{ faces.A === 'reversed' ? '导线引出面（倒序）' : '端子插合面（正序）' }}
+        </button>
+        <button
+          type="button"
+          class="face-btn"
+          :class="{ reversed: faces.B === 'reversed' }"
+          data-testid="face-toggle-B"
+          :data-face="faces.B"
+          :aria-pressed="faces.B === 'reversed'"
+          @click="switchFace('B')"
+        >
+          B 端 · {{ faces.B === 'reversed' ? '导线引出面（倒序）' : '端子插合面（正序）' }}
+        </button>
+        <span class="face-hint">两端可分别切换；仅反转该端针位的显示顺序，连线身份与裁决不变</span>
+      </div>
+      <p
+        v-if="faceNotice"
+        class="face-notice"
+        data-testid="face-notice"
+        role="status"
+      >
+        ⚠ {{ faceNotice }}
+      </p>
 
       <div class="expected-strip" data-testid="expected-list">
         <span class="strip-label">预期关系：</span>
@@ -433,9 +510,9 @@ onBeforeUnmount(() => {
         <!-- 拖拽中的预览线 -->
         <path v-if="dragPath" :d="dragPath" class="drag-preview" fill="none" />
 
-        <!-- A 端针位 -->
+        <!-- A 端针位（按当前观察面的显示顺序排列，身份仍为针位号） -->
         <g
-          v-for="pin in aPins"
+          v-for="pin in displayedA"
           :key="`A-${pin}`"
           :transform="`translate(${X_A}, ${yOf('A', pin)})`"
           class="endpoint"
@@ -480,9 +557,9 @@ onBeforeUnmount(() => {
           </text>
         </g>
 
-        <!-- B 端针位 -->
+        <!-- B 端针位（按当前观察面的显示顺序排列，身份仍为针位号） -->
         <g
-          v-for="pin in bPins"
+          v-for="pin in displayedB"
           :key="`B-${pin}`"
           :transform="`translate(${X_B}, ${yOf('B', pin)})`"
           class="endpoint"
@@ -591,6 +668,45 @@ kbd {
   border-radius: 999px;
   padding: 2px 10px;
   color: #3730a3;
+}
+
+.face-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.face-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.face-btn.reversed {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+  font-weight: 600;
+}
+
+.face-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.face-notice {
+  margin: 6px 0 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #92400e;
+  background: var(--warn-bg);
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
 }
 
 .legend {

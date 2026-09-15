@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   adjudicate,
+  displayIndexOf,
   evaluateBundle,
   parsePinList,
+  projectPins,
   removeConnection,
+  STANDARD_FACES,
+  toggleFace,
   tryConnect,
   validateMapping,
   type Connection,
+  type ViewFaces,
 } from './verification'
 
 let idCounter = 0
@@ -307,5 +312,106 @@ describe('evaluateBundle - 整束状态与修复链路', () => {
       if (r.accepted) wires = r.connections
     }
     expect(evaluateBundle(a, b, wires, expected).status).toBe('pass')
+  })
+})
+
+describe('观察面投影 - 双端投影不改变映射裁决', () => {
+  const a = ['A1', 'A2', 'A3', 'A4']
+  const b = ['B1', 'B2', 'B3', 'B4']
+  // 示例交叉预期：A1→B3、A2→B1、A3→B4、A4→B2
+  const expected = new Map([
+    ['A1', 'B3'],
+    ['A2', 'B1'],
+    ['A3', 'B4'],
+    ['A4', 'B2'],
+  ])
+
+  function buildWires(pairs: Array<[string, string]>): Connection[] {
+    let wires: Connection[] = []
+    for (const [x, y] of pairs) {
+      const r = tryConnect(wires, x, y, nextId)
+      if (!r.accepted) throw new Error('前置连线应成功')
+      wires = r.connections
+    }
+    return wires
+  }
+
+  /** 用同一组针位号身份的连线，在各种观察面组合下裁决必须完全一致 */
+  const facePairs: Array<[string, ViewFaces]> = [
+    ['两端正序', { A: 'standard', B: 'standard' }],
+    ['仅 A 倒序', { A: 'reversed', B: 'standard' }],
+    ['仅 B 倒序', { A: 'standard', B: 'reversed' }],
+    ['两端倒序', { A: 'reversed', B: 'reversed' }],
+  ]
+
+  it('projectPins 正序保持排列，倒序整体反转且不修改原数组', () => {
+    expect(projectPins(a, 'standard')).toEqual(['A1', 'A2', 'A3', 'A4'])
+    expect(projectPins(a, 'reversed')).toEqual(['A4', 'A3', 'A2', 'A1'])
+    expect(a).toEqual(['A1', 'A2', 'A3', 'A4'])
+  })
+
+  it('displayIndexOf 把针位号映射到当前观察面的显示行号', () => {
+    expect(displayIndexOf(a, 'A1', 'standard')).toBe(0)
+    expect(displayIndexOf(a, 'A4', 'standard')).toBe(3)
+    expect(displayIndexOf(a, 'A1', 'reversed')).toBe(3)
+    expect(displayIndexOf(a, 'A4', 'reversed')).toBe(0)
+    expect(displayIndexOf(a, 'A3', 'reversed')).toBe(1)
+  })
+
+  it('默认观察面 STANDARD_FACES 两端均为正序', () => {
+    expect(STANDARD_FACES).toEqual({ A: 'standard', B: 'standard' })
+  })
+
+  it('toggleFace 只翻转指定一端，另一端不变；再次翻转可还原', () => {
+    const once = toggleFace(STANDARD_FACES, 'B')
+    expect(once).toEqual({ A: 'standard', B: 'reversed' })
+    expect(STANDARD_FACES).toEqual({ A: 'standard', B: 'standard' })
+    const twice = toggleFace(once, 'B')
+    expect(twice).toEqual({ A: 'standard', B: 'standard' })
+    const aOnly = toggleFace(once, 'A')
+    expect(aOnly).toEqual({ A: 'reversed', B: 'reversed' })
+    expect(once).toEqual({ A: 'standard', B: 'reversed' })
+  })
+
+  it.each(facePairs)('观察面组合【%s】下全部正确连线裁决仍为 pass', (_name, _faces) => {
+    const wires = buildWires([
+      ['A1', 'B3'],
+      ['A2', 'B1'],
+      ['A3', 'B4'],
+      ['A4', 'B2'],
+    ])
+    // 裁决只读取针位号身份，不接收观察面，结果必须与正序时一致
+    const state = evaluateBundle(a, b, wires, expected)
+    expect(state.status).toBe('pass')
+    expect(state.adjudications.every((item) => item.verdict === 'correct')).toBe(true)
+  })
+
+  it.each(facePairs)('观察面组合【%s】下错接的线仍裁决为 wrong 且预期对端不变', (_name, _faces) => {
+    // A2 误接 B2（预期 B1）、A4 误接 B1（预期 B2）
+    const wires = buildWires([
+      ['A1', 'B3'],
+      ['A2', 'B2'],
+      ['A3', 'B4'],
+      ['A4', 'B1'],
+    ])
+    const state = evaluateBundle(a, b, wires, expected)
+    expect(state.status).toBe('complete_with_errors')
+    const wrongs = state.adjudications.filter((item) => item.verdict === 'wrong')
+    expect(wrongs.map((item) => [item.connection.aPin, item.connection.bPin, item.expectedB]))
+      .toEqual([
+        ['A2', 'B2', 'B1'],
+        ['A4', 'B1', 'B2'],
+      ])
+  })
+
+  it('倒序投影只是排列变化，针位号集合与投影的双射性质保持', () => {
+    for (const [, faces] of facePairs) {
+      const da = projectPins(a, faces.A)
+      const db = projectPins(b, faces.B)
+      expect([...da].sort()).toEqual([...a].sort())
+      expect([...db].sort()).toEqual([...b].sort())
+      expect(new Set(da).size).toBe(a.length)
+      expect(new Set(db).size).toBe(b.length)
+    }
   })
 })
