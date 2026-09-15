@@ -20,9 +20,14 @@ services:
   verify:
     image: harness-wiring-board
     build: .
+    # 与 page 共享网络命名空间，用回环地址直达页面服务。
+    # 不能用 http://page:4173：新版 Chromium 会把无点单标签主机名自动升级为
+    # HTTPS（ERR_SSL_PROTOCOL_ERROR），而本页面仅提供 HTTP；环回地址属于该
+    # 升级机制的规范豁免。回环同时也不会触发 vite preview 的 Host 白名单。
+    network_mode: "service:page"
     environment:
-      # 指向 compose 网络中的 page 服务；设置后 Playwright 不再自起服务器
-      BASE_URL: http://page:4173
+      # 指向同一网络命名空间内的 page 服务；设置后 Playwright 不再自起服务器
+      BASE_URL: http://127.0.0.1:4173
     depends_on:
       page:
         condition: service_healthy

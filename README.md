@@ -85,8 +85,11 @@ docker compose build
 docker compose run --rm verify      # 6 个用例全部通过则退出码为 0
 ```
 
-`verify` 通过 compose 内网访问 `http://page:4173`，不额外占用宿主端口；
-页面容器仅把容器内 4173 映射到宿主 `${WEB_PORT:-8080}`。
+`verify` 通过 `network_mode: "service:page"` 与页面容器共享网络命名空间，以回环地址
+`http://127.0.0.1:4173` 访问页面。这里刻意不使用 compose 服务名 `http://page:4173`：
+新版 Chromium 会把无点单标签主机名（如 `page`）的导航自动升级为 HTTPS，而页面仅提供 HTTP，
+会导致全部用例报 `ERR_SSL_PROTOCOL_ERROR`；环回地址属于该升级机制的规范豁免。
+验收不额外占用宿主端口；页面容器仅把容器内 4173 映射到宿主 `${WEB_PORT:-8080}`。
 
 ## 五、目录结构
 
