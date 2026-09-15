@@ -64,7 +64,9 @@ npm run test:e2e   # Playwright：鼠标拖拽链路 + 键盘选择链路的端�
 
 ## 四、Docker / Docker Compose
 
-镜像同时包含页面静态服务（`vite preview`）与 Playwright 验收环境（Chromium 及其系统库）。
+镜像同时包含页面静态服务（`vite preview`）与 Playwright 验收环境：运行/验收阶段基于与
+`@playwright/test` 版本精确匹配的官方镜像 `mcr.microsoft.com/playwright:v1.63.0-noble`，
+Chromium 及其系统库均已预装，无需在容器内额外安装。
 
 ```bash
 # 构建并启动页面（默认宿主端口 8080）：

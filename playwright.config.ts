@@ -17,7 +17,16 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Docker 中 /dev/shm 默认较小，避免标签页崩溃（Playwright 官方容器建议）
+        launchOptions: { args: ['--disable-dev-shm-usage'] },
+      },
+    },
+  ],
   webServer: process.env.BASE_URL
     ? undefined
     : {
